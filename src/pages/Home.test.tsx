@@ -1001,7 +1001,7 @@ describe('Home native-feel behavior', () => {
     expect(api.app.confirm).not.toHaveBeenCalled();
   });
 
-  it('cancels the native close request when dirty note discard is rejected', async () => {
+  it('cancels the native close request when closing with unsaved changes is rejected', async () => {
     let closeHandler: (() => void) | null = null;
     const api = createApi({
       app: {
@@ -1024,13 +1024,13 @@ describe('Home native-feel behavior', () => {
       title: 'Close HackDesk',
       confirmLabel: 'Close',
       cancelLabel: 'Keep Editing',
-      destructive: true,
+      destructive: false,
     })));
     await waitFor(() => expect(api.app.cancelClose).toHaveBeenCalled());
     expect(api.app.confirmClose).not.toHaveBeenCalled();
   });
 
-  it('confirms the native close request after dirty note discard is accepted', async () => {
+  it('confirms the native close request after closing with unsaved changes is accepted', async () => {
     let closeHandler: (() => void) | null = null;
     const api = createApi({
       app: {
@@ -1095,11 +1095,11 @@ describe('Home native-feel behavior', () => {
 
     await waitFor(() => expect(api.app.confirm).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Close HackDesk',
-      message: 'Close 2 unsaved notes?',
+      message: 'Close HackDesk with unsaved changes?',
       detail: expect.stringContaining('2 notes have unsaved changes'),
       confirmLabel: 'Close',
       cancelLabel: 'Keep Editing',
-      destructive: true,
+      destructive: false,
     })));
     await waitFor(() => expect(api.app.cancelClose).toHaveBeenCalled());
     expect(api.app.confirmClose).not.toHaveBeenCalled();
@@ -1235,11 +1235,11 @@ describe('Home native-feel behavior', () => {
 
     await waitFor(() => expect(api.app.confirm).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Close HackDesk',
-      message: 'Close “Unsaved title”?',
+      message: 'Close HackDesk with unsaved changes?',
       detail: expect.stringContaining('1 note has a failed save'),
       confirmLabel: 'Close',
       cancelLabel: 'Keep Editing',
-      destructive: true,
+      destructive: false,
     })));
     await waitFor(() => expect(api.app.cancelClose).toHaveBeenCalled());
     expect(api.app.confirmClose).not.toHaveBeenCalled();
@@ -1688,7 +1688,20 @@ describe('Home native-feel behavior', () => {
     expect(screen.getByText('No unsaved note changes.')).toBeInTheDocument();
   });
 
-  it('switches the global editor mode from the command palette', async () => {
+  it('saves Settings and closes the dialog without refreshing unrelated HackMD data', async () => {
+    const api = createApi();
+    renderHome(api);
+    await findRenderedNoteTitle();
+    fireEvent.click(screen.getByRole('button', { name: 'Open settings for Michael' }));
+    fireEvent.change(screen.getByLabelText('Window title'), { target: { value: 'My HackDesk' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.settings.update).toHaveBeenCalledWith({ title: 'My HackDesk' }));
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Settings' })).not.toBeInTheDocument());
+    expect(api.hackmd.listNotes).toHaveBeenCalledOnce();
+    expect(api.hackmd.getCurrentUser).toHaveBeenCalledOnce();
+  });
+
+  it('switches the global editor mode from the command palette without refreshing HackMD', async () => {
     const api = createApi();
 
     renderHome(api);
@@ -1707,6 +1720,8 @@ describe('Home native-feel behavior', () => {
     }));
     await waitFor(() => expect(window.document.querySelector('.cm-editor')).toHaveAttribute('data-editor-mode', 'vim'));
     expect(screen.queryByRole('dialog', { name: 'Command Palette' })).not.toBeInTheDocument();
+    expect(api.hackmd.listNotes).toHaveBeenCalledOnce();
+    expect(api.hackmd.getCurrentUser).toHaveBeenCalledOnce();
   });
 
   it('quick-opens a matching note with Cmd+P', async () => {
