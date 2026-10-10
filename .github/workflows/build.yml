@@ -77,11 +77,11 @@ jobs:
         run: |
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
             xvfb-run --auto-servernum pnpm exec playwright test \
-              --config electron/playwright.config.ts \
+              --config electron/playwright.packaged.config.ts \
               electron/e2e/packaged-startup.spec.ts
           else
             pnpm exec playwright test \
-              --config electron/playwright.config.ts \
+              --config electron/playwright.packaged.config.ts \
               electron/e2e/packaged-startup.spec.ts
           fi
       - name: Upload packaged-startup Playwright report on failure

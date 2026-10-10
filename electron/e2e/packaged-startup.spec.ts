@@ -46,17 +46,17 @@ test('packaged binary launches and serves the packaged renderer (#140)', async (
   // pre-seeded with `onboarding.hackmdTokenSetupDeferred: true` so the HackMD
   // onboarding dialog does not cover the workspace on first launch.
   const home = await mkdtemp(join(tmpdir(), 'hackdesk-packaged-'));
+  const vault = join(home, 'vault');
+  await mkdir(vault);
   await mkdir(join(home, '.hackdesk'), { recursive: true });
   await writeFile(join(home, '.hackdesk', 'settings.json'), JSON.stringify({
     ...defaultSettings,
+    localVault: { path: vault },
     onboarding: { hackmdTokenSetupDeferred: true },
   }));
 
-  // `--no-sandbox` is required on Linux CI runners because the GitHub-hosted
-  // ubuntu-latest image runs the packaged Electron as root and Chromium's
-  // sandbox refuses to start under root. macOS and Windows runners don't
-  // need it; passing it on macOS would invalidate the hardened-runtime
-  // signature verification chain, so the flag is scoped to linux only.
+  // Only the unpacked Linux CI build bypasses Chromium's OS sandbox.
+  // Keep macOS/Windows launch arguments and packaged Electron fuses intact.
   const spawnArgs = [
     `--user-data-dir=${join(home, 'user-data')}`,
     `--hackdesk-home=${home}`,
@@ -97,7 +97,11 @@ test('packaged binary launches and serves the packaged renderer (#140)', async (
     //      time `context.pages()` is often empty; fall back to waiting for
     //      the first `page` event so the test is deterministic regardless of
     //      which side came up first.
-    for (let attempt = 0; attempt < 50 && !browser; attempt += 1) {
+    const startupDeadline = Date.now() + 30_000;
+    while (!browser && Date.now() < startupDeadline) {
+      if (proc.exitCode !== null || proc.signalCode !== null) {
+        throw new Error(`Packaged app exited before CDP startup: code=${proc.exitCode}, signal=${proc.signalCode}`);
+      }
       browser = await chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`, { timeout: 5_000 }).catch(() => null);
       if (!browser) {
         await new Promise((r) => setTimeout(r, 100));
@@ -119,8 +123,7 @@ test('packaged binary launches and serves the packaged renderer (#140)', async (
     // when `app.isPackaged` is true. A dev-server URL would be
     // `http://localhost:5173/...`; reject it.
     const url = page.url();
-    expect(url).not.toMatch(/^http:\/\/localhost:/);
-    expect(url).toMatch(/^hackdesk:\/\//);
+    expect(url).toBe('hackdesk://renderer/index.html#/electron');
   } finally {
     if (browser) {
       await browser.close().catch(() => {
@@ -128,7 +131,7 @@ test('packaged binary launches and serves the packaged renderer (#140)', async (
         // already gone can throw; the SIGTERM below will reap it.
       });
     }
-    if (proc && proc.exitCode === null) {
+    if (proc && proc.exitCode === null && proc.signalCode === null) {
       proc.kill('SIGTERM');
       // SIGKILL backstop after 5s -- Electron with hardened runtime on macOS
       // sometimes needs SIGKILL to exit cleanly when CDP closes.
